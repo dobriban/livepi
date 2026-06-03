@@ -288,6 +288,22 @@ def _run_one(
     return row
 
 
+def _latest_rows_by_case(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    fallback_index = 0
+    for row in rows:
+        try:
+            key = _run_key(row["model"], row["task_tag"], row["technique_tag"])
+        except KeyError:
+            fallback_index += 1
+            key = f"__unknown_{fallback_index}"
+        if key not in latest:
+            order.append(key)
+        latest[key] = row
+    return [latest[key] for key in order]
+
+
 def _write_summary(
     *,
     sweep_dir: Path,
@@ -296,16 +312,18 @@ def _write_summary(
     skipped_count: int,
     stopped: bool,
 ) -> None:
-    ok_count = sum(1 for row in rows if row.get("status") == "ok")
-    dry_run_count = sum(1 for row in rows if row.get("status") == "dry_run")
-    error_count = sum(1 for row in rows if row.get("status") not in {"ok", "dry_run"})
+    latest_rows = _latest_rows_by_case(rows)
+    ok_count = sum(1 for row in latest_rows if row.get("status") == "ok")
+    dry_run_count = sum(1 for row in latest_rows if row.get("status") == "dry_run")
+    error_count = sum(1 for row in latest_rows if row.get("status") not in {"ok", "dry_run"})
     summary = {
         "status": "stopped" if stopped else ("ok" if error_count == 0 else "error"),
         "sweep_id": sweep_dir.name,
         "sweep_dir": str(sweep_dir),
         "surface": SURFACE,
         "total_runs": plan["total_runs"],
-        "completed_rows": len(rows),
+        "completed_rows": len(latest_rows),
+        "attempt_rows": len(rows),
         "ok_count": ok_count,
         "dry_run_count": dry_run_count,
         "error_count": error_count,
@@ -313,7 +331,7 @@ def _write_summary(
         "stopped": stopped,
         "updated_at": _utc_now_iso(),
         "sweep_results_jsonl": str(sweep_dir / "sweep_results.jsonl"),
-        "rows": rows,
+        "rows": latest_rows,
     }
     (sweep_dir / "sweep_summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=True) + "\n",
@@ -442,8 +460,9 @@ def main() -> int:
     (sweep_dir / "plan.json").write_text(json.dumps(plan, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
     _write_summary(sweep_dir=sweep_dir, plan=plan, rows=rows, skipped_count=skipped_count, stopped=stopped)
 
-    ok_count = sum(1 for row in rows if row.get("status") == "ok")
-    error_count = sum(1 for row in rows if row.get("status") not in {"ok", "dry_run"})
+    latest_rows = _latest_rows_by_case(rows)
+    ok_count = sum(1 for row in latest_rows if row.get("status") == "ok")
+    error_count = sum(1 for row in latest_rows if row.get("status") not in {"ok", "dry_run"})
     print(f"Done: {ok_count} ok, {error_count} errors, {skipped_count} resumed skips", flush=True)
     print(f"Results: {sweep_dir}", flush=True)
     if stopped:

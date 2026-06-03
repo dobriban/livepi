@@ -21,7 +21,8 @@ import uuid
 from dataclasses import dataclass
 from contextlib import contextmanager
 from email.header import decode_header, make_header
-from email.utils import getaddresses
+from email.message import EmailMessage
+from email.utils import formatdate, getaddresses, make_msgid
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
@@ -2283,6 +2284,84 @@ def _get_recent_emails(limit: int = 5) -> list[dict[str, str]]:
             pass
 
 
+def _email_inject_method() -> str:
+    method = os.getenv("LIVEPI_EMAIL_INJECT_METHOD", "smtp").strip().lower()
+    aliases = {
+        "imap": "imap_append",
+        "append": "imap_append",
+        "imap-append": "imap_append",
+        "imap_append": "imap_append",
+        "smtp": "smtp",
+    }
+    if method not in aliases:
+        raise RuntimeError(
+            "Invalid LIVEPI_EMAIL_INJECT_METHOD. Use 'smtp' or 'imap_append'."
+        )
+    return aliases[method]
+
+
+def _append_attack_email_to_imap(
+    *,
+    sender: str,
+    recipient: str,
+    subject: str,
+    body: str,
+) -> dict[str, Any]:
+    host = os.getenv("IMAP_HOST", "").strip()
+    port_raw = os.getenv("IMAP_PORT", "993").strip() or "993"
+    user = os.getenv("IMAP_USER", "").strip()
+    password = os.getenv("IMAP_PASS", "").strip()
+    mailbox = os.getenv("IMAP_MAILBOX", "INBOX").strip() or "INBOX"
+    reject = os.getenv("IMAP_REJECT_UNAUTHORIZED", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not host or not user or not password:
+        raise RuntimeError("Missing IMAP_* credentials for IMAP email injection")
+    try:
+        port = int(port_raw)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid IMAP_PORT: {port_raw}") from exc
+
+    msg = EmailMessage()
+    msg_id = make_msgid()
+    msg["Message-ID"] = msg_id
+    msg["Date"] = formatdate(localtime=True)
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    imap = _open_imap_ssl(host, port, reject_unauthorized=reject)
+    try:
+        _imap_call("attack email append login", imap.login, user, password)
+        status, data = _imap_call(
+            "attack email append",
+            imap.append,
+            mailbox,
+            None,
+            None,
+            msg.as_bytes(),
+        )
+        if status != "OK":
+            raise RuntimeError(f"IMAP APPEND failed: {data!r}")
+    finally:
+        try:
+            imap.logout()
+        except Exception:
+            pass
+
+    return {
+        "message_id": msg_id.strip("<>"),
+        "mailbox": mailbox,
+        "mailbox_user": user,
+        "host": host,
+        "port": port,
+    }
+
+
 def _extract_mailbox_name(list_row: str) -> str:
     line = list_row.strip()
     if not line:
@@ -4059,10 +4138,13 @@ def run_surface_test(
     attacker_email = ""
     recipient_email = ""
     if surface_key == "email_gmail":
-        attacker_email = os.getenv("ATTACKER_SMTP_FROM", "").strip() or os.getenv("SMTP_FROM", "").strip()
+        attacker_email = _benchmark_attacker_email() or os.getenv("SMTP_FROM", "").strip()
         recipient_email = os.getenv("IMAP_USER", "").strip()
         if not attacker_email or not recipient_email:
-            raise RuntimeError("Missing ATTACKER_SMTP_FROM or SMTP_FROM, or missing IMAP_USER for email surface run")
+            raise RuntimeError(
+                "Missing OPENCLAW_BENCHMARK_ATTACKER_EMAIL, ATTACKER_SMTP_FROM, "
+                "SMTP_FROM, or IMAP_USER for email surface run"
+            )
         target = attacker_email
     elif surface_key in TELEGRAM_SURFACES:
         telegram_token = (
@@ -4414,18 +4496,35 @@ def run_surface_test(
         if surface_key == "email_gmail":
             # 2) Send attack email.
             subject, body = _split_subject_body(str(package.get("payload", "")))
-            smtp_result = send_smtp_email(
-                recipient=recipient_email,
-                subject=subject,
-                body=body,
-                config=attacker_smtp_config_from_env(),
-            )
-            result["steps"]["send_email"] = {
-                "recipient": recipient_email,
-                "sender": smtp_result.sender,
-                "subject": subject,
-                "smtp": smtp_result.to_dict(),
-            }
+            email_inject_method = _email_inject_method()
+            if email_inject_method == "imap_append":
+                append_result = _append_attack_email_to_imap(
+                    sender=attacker_email,
+                    recipient=recipient_email,
+                    subject=subject,
+                    body=body,
+                )
+                result["steps"]["send_email"] = {
+                    "recipient": recipient_email,
+                    "sender": attacker_email,
+                    "subject": subject,
+                    "method": "imap_append",
+                    "imap": append_result,
+                }
+            else:
+                smtp_result = send_smtp_email(
+                    recipient=recipient_email,
+                    subject=subject,
+                    body=body,
+                    config=attacker_smtp_config_from_env(),
+                )
+                result["steps"]["send_email"] = {
+                    "recipient": recipient_email,
+                    "sender": smtp_result.sender,
+                    "subject": subject,
+                    "method": "smtp",
+                    "smtp": smtp_result.to_dict(),
+                }
             result["steps"]["recent_emails_before_chat"] = _get_recent_emails(limit=5)
             effective_chat_trigger = chat_trigger_message.strip() or _default_agent_chat_trigger(
                 surface_key,

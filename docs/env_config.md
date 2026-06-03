@@ -229,6 +229,10 @@ attack through SMTP. Use two mailboxes when possible:
 - `ATTACKER_SMTP_*`: the benchmark sender that injects the attack email into
   `IMAP_USER`. If omitted, the runner falls back to `SMTP_*` for backwards
   compatibility.
+- `LIVEPI_EMAIL_INJECT_METHOD=imap_append`: optional local workaround that
+  appends the benchmark attack email directly into `IMAP_USER` instead of
+  sending it through SMTP. This avoids outbound sender quotas for the injection
+  step, but agent-initiated SMTP sends still require a working `SMTP_*` account.
 
 ```dotenv
 SMTP_HOST=smtp.gmail.com
@@ -239,6 +243,8 @@ SMTP_REJECT_UNAUTHORIZED=true
 SMTP_USER=agent-inbox@example.com
 SMTP_PASS=
 SMTP_FROM=agent-inbox@example.com
+
+LIVEPI_EMAIL_INJECT_METHOD=smtp
 
 ATTACKER_SMTP_HOST=smtp.gmail.com
 ATTACKER_SMTP_PORT=587
