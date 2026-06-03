@@ -856,6 +856,12 @@ def _ssh_command(host: str) -> list[str]:
     return ["ssh", *_ssh_raw_options_from_env(), host]
 
 
+def _remote_python_command(host: str) -> list[str]:
+    prefix = _ssh_command(host)
+    python_cmd = "python3" if prefix else sys.executable
+    return [*prefix, python_cmd]
+
+
 def _env_truthy(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 
@@ -1073,7 +1079,7 @@ def _openclaw_workspace_repos_for_surface(surface_key: str, repo_name: str = "")
 
 
 def _download_remote_sessions(host: str, out_file: Path) -> dict[str, Any]:
-    cmd = [*_ssh_command(host), "python3", "-"]
+    cmd = [*_remote_python_command(host), "-"]
     proc = subprocess.run(
         cmd,
         input=REMOTE_SESSION_ARCHIVER.encode("utf-8"),
@@ -1092,7 +1098,7 @@ def _download_remote_sessions(host: str, out_file: Path) -> dict[str, Any]:
 
 
 def _run_remote_python(host: str, script: str) -> dict[str, Any]:
-    cmd = [*_ssh_command(host), "python3", "-"]
+    cmd = [*_remote_python_command(host), "-"]
     result = _run_command(cmd, stdin_text=script)
     return result
 
@@ -1446,7 +1452,7 @@ def _seed_remote_user_folder(
     if not script_path.exists():
         raise RuntimeError(f"Missing create_remote_user_folder.py at {script_path}")
     cmd = [
-        "python3",
+        sys.executable,
         str(script_path),
         "--host",
         host,

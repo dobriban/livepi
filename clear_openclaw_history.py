@@ -8,6 +8,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 
 
 REMOTE_CLEARER = r"""
@@ -163,7 +164,9 @@ def main() -> int:
     if args.no_backup:
         remote_args.append("--no-backup")
 
-    cmd = [*_ssh_prefix(args), "python3", "-", *remote_args]
+    prefix = _ssh_prefix(args)
+    python_cmd = "python3" if prefix else sys.executable
+    cmd = [*prefix, python_cmd, "-", *remote_args]
     if args.print_command:
         print("Running:", " ".join(shlex.quote(part) for part in cmd))
     proc = subprocess.run(cmd, input=REMOTE_CLEARER, text=True)

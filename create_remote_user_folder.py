@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
+import sys
 
 
 DEFAULT_SEED = 20260320
@@ -287,7 +288,7 @@ def _is_local_host(host: str) -> bool:
 
 def _build_ssh_command(args: argparse.Namespace, remote_args: list[str]) -> list[str]:
     if _is_local_host(args.host):
-        return ["python3", "-", *remote_args]
+        return [sys.executable, "-", *remote_args]
     cmd = ["ssh"]
     if args.port is not None:
         cmd.extend(["-p", str(args.port)])
