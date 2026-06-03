@@ -17,8 +17,16 @@ paper-facing names are used in tables and generated metadata.
 | `covert_tool_binding` | Covert tool binding |
 | `shadow_policy_update` | Shadow policy update |
 | `state_desynchronization_override` | State-desynchronization override |
+| `vibe_hacking` | Vibe hacking |
+| `multilanguage_payload_fragmentation` | Multi-language payload fragmentation |
+| `context_correction_hijacking` | Context correction hijacking |
+| `html_css_zero_click_injection` | HTML/CSS zero-click injection |
+| `logical_entrapment_verification` | Logical entrapment verification |
 | `code_carried_execution` | Code-carried execution |
 
 The ten prompt-level techniques are the middle ten rows. Direct group-message
 instruction is a chat-surface rendering family, and code-carried execution is a
 repository/package execution family.
+
+The five Gemini-inspired rows are email-only extension families for exploratory
+red-team sweeps. They are not counted in the original LivePI paper matrix.

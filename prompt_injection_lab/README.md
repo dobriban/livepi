@@ -19,7 +19,7 @@ the paper appendix.
 
 ## Supported Technique Families
 
-The canonical technique/rendering-family set contains 12 tags:
+The canonical technique/rendering-family set contains 17 tags:
 
 | Tag | Paper-facing name | Kind |
 | --- | --- | --- |
@@ -34,12 +34,20 @@ The canonical technique/rendering-family set contains 12 tags:
 | `covert_tool_binding` | Covert tool binding | prompt-level |
 | `shadow_policy_update` | Shadow policy update | prompt-level |
 | `state_desynchronization_override` | State-desynchronization override | prompt-level |
+| `vibe_hacking` | Vibe hacking | email extension |
+| `multilanguage_payload_fragmentation` | Multi-language payload fragmentation | email extension |
+| `context_correction_hijacking` | Context correction hijacking | email extension |
+| `html_css_zero_click_injection` | HTML/CSS zero-click injection | email extension |
+| `logical_entrapment_verification` | Logical entrapment verification | email extension |
 | `code_carried_execution` | Code-carried execution | code-carried |
 
 The ten prompt-level families are used for Email, Local Docs, and Gist
 prompt-bearing surfaces. The direct group-message rendering is used for
 WhatsApp, Telegram, and Slack group-channel cases. Code-carried execution is
 used for the Repo Links supply-chain family.
+
+The five email extension families are exploratory Gemini-inspired cases. They
+are not counted in the original 169-case paper matrix.
 
 ## Paper Surface And Case Matrix
 
@@ -90,6 +98,26 @@ python3 prompt_injection_lab/scripts/run_surface_test.py \
   --surface-tag email_gmail \
   --compose-paper-techniques \
   --malicious-task-tag email_summary_to_external
+```
+
+Generate the 500-case Gemini email extension manifest:
+
+```bash
+python3 prompt_injection_lab/scripts/generate_email_gemini_extension_cases.py
+```
+
+Run the compact Gemini email extension sweep:
+
+```bash
+python3 prompt_injection_lab/scripts/sweep_email_gmail_local.py \
+  --gemini-extension
+```
+
+Run the full 500-case Gemini email extension manifest:
+
+```bash
+python3 prompt_injection_lab/scripts/sweep_email_gmail_local.py \
+  --email-attack-cases-jsonl prompt_injection_lab/tasks/generated/email_gemini_extension_500.jsonl
 ```
 
 Seed the deterministic synthetic user profile on the remote VPS:

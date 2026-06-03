@@ -5,6 +5,10 @@
     "livepi_nips": {
       "title": "LivePI NIPS benchmark appendix",
       "url": "local://nips/main_nips_1.tex"
+    },
+    "gemini_email_extension": {
+      "title": "Gemini-suggested email evasion pillars",
+      "url": "local://docs/email_attack_candidate_attempts.md"
     }
   },
   "classic": [],
@@ -75,6 +79,36 @@
       "family_name": "State-desynchronization override",
       "source_ids": ["livepi_nips"],
       "summary": "Recovered-state framing that suppresses re-confirmation."
+    },
+    {
+      "tag": "vibe_hacking",
+      "family_name": "Vibe hacking",
+      "source_ids": ["gemini_email_extension"],
+      "summary": "Professional administrative framing that camouflages the objective as routine privileged workflow."
+    },
+    {
+      "tag": "multilanguage_payload_fragmentation",
+      "family_name": "Multi-language payload fragmentation",
+      "source_ids": ["gemini_email_extension"],
+      "summary": "Fragments the objective across English, non-English text, and encoded fields."
+    },
+    {
+      "tag": "context_correction_hijacking",
+      "family_name": "Context correction hijacking",
+      "source_ids": ["gemini_email_extension"],
+      "summary": "Uses fake follow-up corrections and stale-parameter replacement to steer the current task."
+    },
+    {
+      "tag": "html_css_zero_click_injection",
+      "family_name": "HTML/CSS zero-click injection",
+      "source_ids": ["gemini_email_extension"],
+      "summary": "Embeds task parameters in HTML comments, CSS variables, and visually hidden spans."
+    },
+    {
+      "tag": "logical_entrapment_verification",
+      "family_name": "Logical entrapment verification",
+      "source_ids": ["gemini_email_extension"],
+      "summary": "Frames execution as verification or summarization of a benchmark payload."
     },
     {
       "tag": "code_carried_execution",

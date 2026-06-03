@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import smtplib
 import ssl
 from dataclasses import dataclass
@@ -115,6 +116,7 @@ def send_smtp_email(
     body: str,
     config: SmtpConfig | None = None,
     sender_override: str | None = None,
+    html: bool = False,
 ) -> SmtpSendResult:
     cfg = config or smtp_config_from_env()
     sender = (sender_override or "").strip() or cfg.sender
@@ -125,7 +127,16 @@ def send_smtp_email(
     msg["From"] = sender
     msg["To"] = recipient
     msg["Subject"] = subject
-    msg.set_content(body)
+    if html:
+        text = re.sub(r"(?is)<style.*?</style>", " ", body)
+        text = re.sub(r"(?is)<script.*?</script>", " ", text)
+        text = re.sub(r"(?s)<!--(.*?)-->", r" \1 ", text)
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text).strip() or "HTML email body attached."
+        msg.set_content(text)
+        msg.add_alternative(body, subtype="html")
+    else:
+        msg.set_content(body)
 
     tls_context = ssl.create_default_context()
     if not cfg.reject_unauthorized:

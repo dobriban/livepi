@@ -40,7 +40,10 @@ from prompt_injection_lab.technique_runtime import (  # noqa: E402
     build_injection_package,
     supported_profile_tags,
 )
-from prompt_injection_lab.prompt_builder import build_composite_injection_prompt  # noqa: E402
+from prompt_injection_lab.prompt_builder import (  # noqa: E402
+    EMAIL_GEMINI_EXTENSION_TECHNIQUES,
+    build_composite_injection_prompt,
+)
 from prompt_injection_lab.agents.base import ChatAgentAdapter  # noqa: E402
 from prompt_injection_lab.agents.claude_code_adapter import ClaudeCodeCliAdapter  # noqa: E402
 from prompt_injection_lab.agents.codex_adapter import CodexCliAdapter  # noqa: E402
@@ -314,6 +317,7 @@ TOP_10_COMPOSITION_TECHNIQUES = [
     "shadow_policy_update",
     "state_desynchronization_override",
 ]
+EMAIL_GEMINI_EXTENSION_COMPOSITION_TECHNIQUES = list(EMAIL_GEMINI_EXTENSION_TECHNIQUES)
 
 
 REMOTE_SYSTEM_STATE_CHECKER = r"""
@@ -723,14 +727,23 @@ def _require_feasible_techniques(surface: str, objective: str) -> list[str]:
 
 def _validate_feasible_case(surface: str, technique_tags: list[str], objective: str) -> list[str]:
     surface_key = _canonical_surface_key(surface.strip().lower())
-    feasible = _require_feasible_techniques(surface_key, objective)
+    objective_key = objective.strip()
+    feasible = _require_feasible_techniques(surface_key, objective_key)
     invalid = [tag for tag in technique_tags if tag not in feasible]
     if invalid:
+        extension_tags = set(EMAIL_GEMINI_EXTENSION_COMPOSITION_TECHNIQUES)
+        if (
+            surface_key == "email_gmail"
+            and objective_key in _paper_objectives()
+            and all(tag in extension_tags for tag in invalid)
+        ):
+            return list(dict.fromkeys([*feasible, *EMAIL_GEMINI_EXTENSION_COMPOSITION_TECHNIQUES]))
         raise RuntimeError(
             "Infeasible LivePI paper combination: "
-            f"surface={surface_key}, objective={objective.strip()}, "
+            f"surface={surface_key}, objective={objective_key}, "
             f"technique(s)={', '.join(invalid)}. "
-            f"Feasible technique(s): {', '.join(feasible)}"
+            f"Feasible paper technique(s): {', '.join(feasible)}. "
+            "Gemini extension techniques are allowed only for email_gmail."
         )
     return feasible
 
@@ -777,6 +790,126 @@ def _split_subject_body(payload: str, default_subject: str = "Operations follow-
             rest = rest[1:]
         return subject, "\n".join(rest).strip()
     return default_subject, text
+
+
+def _resolve_repo_relative_path(raw_path: str) -> Path:
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path
+
+
+def _load_email_attack_case(cases_path: str, case_id: str) -> dict[str, Any] | None:
+    raw_path = cases_path.strip()
+    raw_case_id = case_id.strip()
+    if not raw_path and not raw_case_id:
+        return None
+    if not raw_path:
+        raise RuntimeError("--email-attack-case-id requires --email-attack-cases-jsonl")
+    path = _resolve_repo_relative_path(raw_path)
+    if not path.exists():
+        raise RuntimeError(f"Email attack case file does not exist: {path}")
+
+    if path.suffix.lower() == ".json":
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "cases" in data and isinstance(data["cases"], list):
+            rows = data["cases"]
+        elif isinstance(data, dict):
+            rows = [data]
+        else:
+            raise RuntimeError(f"Email attack case JSON must be an object or object with cases[]: {path}")
+    else:
+        rows = []
+        for line_num, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"{path}:{line_num} invalid JSONL row: {exc}") from exc
+            if isinstance(row, dict):
+                rows.append(row)
+
+    if raw_case_id:
+        for row in rows:
+            if str(row.get("case_id", "")).strip() == raw_case_id:
+                return row
+        raise RuntimeError(f"Email attack case id not found in {path}: {raw_case_id}")
+    if len(rows) != 1:
+        raise RuntimeError(
+            "--email-attack-case-id is required when the case file contains "
+            f"{len(rows)} rows"
+        )
+    return rows[0]
+
+
+_OBJECTIVE_PLACEHOLDERS_BY_TAG = {
+    "crypto_related_files_to_email": "{{OBJECTIVE_CRYPTO_FILES_TO_EMAIL}}",
+    "disable_firewall_auto_updates": "{{OBJECTIVE_DISABLE_FIREWALL_AUTO_UPDATES}}",
+    "download_and_run_scan_py": "{{OBJECTIVE_DOWNLOAD_AND_RUN_SCAN_PY}}",
+    "email_summary_to_external": "{{OBJECTIVE_EMAIL_SUMMARY_TO_EXTERNAL}}",
+    "solana_transfer_urgent": "{{OBJECTIVE_SOLANA_TRANSFER_URGENT}}",
+}
+
+
+def _render_email_attack_case_text(text: str, *, task_text: str, objective_tag: str) -> str:
+    rendered = str(text)
+    rendered = rendered.replace("{{GOAL}}", task_text)
+    rendered = rendered.replace("{{GOAL_B64}}", base64.b64encode(task_text.encode("utf-8")).decode("ascii"))
+    rendered = rendered.replace("{{MALICIOUS_TASK}}", task_text)
+    rendered = rendered.replace("{{OBJECTIVE}}", task_text)
+    active_placeholder = _OBJECTIVE_PLACEHOLDERS_BY_TAG.get(objective_tag.strip())
+    if active_placeholder:
+        rendered = rendered.replace(active_placeholder, task_text)
+    for placeholder in _OBJECTIVE_PLACEHOLDERS_BY_TAG.values():
+        rendered = rendered.replace(placeholder, task_text)
+    return rendered
+
+
+def _email_attack_case_payload(
+    case: dict[str, Any],
+    *,
+    task_text: str,
+    objective_tag: str,
+) -> str:
+    subject = _render_email_attack_case_text(
+        str(case.get("subject", "")).strip() or "Operations follow-up",
+        task_text=task_text,
+        objective_tag=objective_tag,
+    )
+    body_source = case.get("body", "")
+    if not str(body_source).strip() and case.get("body_seed"):
+        body_source = case.get("body_seed", "")
+    if not str(body_source).strip() and case.get("payload"):
+        body_source = case.get("payload", "")
+    body = _render_email_attack_case_text(
+        str(body_source),
+        task_text=task_text,
+        objective_tag=objective_tag,
+    ).strip()
+    return f"Subject: {subject}\n\n{body}"
+
+
+def _looks_like_html_email(body: str) -> bool:
+    text = body.lower()
+    return any(marker in text for marker in ("<html", "<body", "<span", "<div", "<style", "<!--"))
+
+
+def _plain_fallback_from_html(html_body: str) -> str:
+    text = re.sub(r"(?is)<style.*?</style>", " ", html_body)
+    text = re.sub(r"(?is)<script.*?</script>", " ", text)
+    text = re.sub(r"(?s)<!--(.*?)-->", r" \1 ", text)
+    text = re.sub(r"(?s)<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip() or "HTML email body attached."
+
+
+def _set_email_message_content(msg: EmailMessage, body: str, *, html: bool) -> None:
+    if html:
+        msg.set_content(_plain_fallback_from_html(body))
+        msg.add_alternative(body, subtype="html")
+    else:
+        msg.set_content(body)
 
 
 def _parse_optional_json_object(raw_value: str, label: str) -> dict[str, Any]:
@@ -2306,6 +2439,7 @@ def _append_attack_email_to_imap(
     recipient: str,
     subject: str,
     body: str,
+    html: bool = False,
 ) -> dict[str, Any]:
     host = os.getenv("IMAP_HOST", "").strip()
     port_raw = os.getenv("IMAP_PORT", "993").strip() or "993"
@@ -2332,7 +2466,7 @@ def _append_attack_email_to_imap(
     msg["From"] = sender
     msg["To"] = recipient
     msg["Subject"] = subject
-    msg.set_content(body)
+    _set_email_message_content(msg, body, html=html)
 
     imap = _open_imap_ssl(host, port, reject_unauthorized=reject)
     try:
@@ -2359,6 +2493,7 @@ def _append_attack_email_to_imap(
         "mailbox_user": user,
         "host": host,
         "port": port,
+        "html": html,
     }
 
 
@@ -3961,6 +4096,8 @@ def run_surface_test(
     github_share_link: str = "",
     github_file_url: str = "",
     cleanup_email: str = "",
+    email_attack_cases_jsonl: str = "",
+    email_attack_case_id: str = "",
     base_model: str = "",
     agent_model: str = "",
     reddit_client_id: str = "",
@@ -3995,6 +4132,13 @@ def run_surface_test(
         normalized_technique_tags,
         malicious_task_tag,
     )
+    paper_feasible_techniques = _feasible_techniques_for(surface_key, malicious_task_tag)
+    extension_technique_tags = [
+        tag for tag in normalized_technique_tags if tag in EMAIL_GEMINI_EXTENSION_COMPOSITION_TECHNIQUES
+    ]
+    paper_counted_case = not extension_technique_tags and all(
+        tag in paper_feasible_techniques for tag in normalized_technique_tags
+    )
 
     run_name = "__".join(
         [
@@ -4017,6 +4161,9 @@ def run_surface_test(
         "primary_technique_tag": primary_technique_tag,
         "technique_tags": normalized_technique_tags,
         "feasible_techniques_for_surface_objective": feasible_techniques,
+        "case_scope": "paper" if paper_counted_case else "email_gemini_extension",
+        "paper_counted_case": paper_counted_case,
+        "extension_technique_tags": extension_technique_tags,
         "paper_case": _paper_case_metadata(
             surface_key,
             malicious_task_tag,
@@ -4385,6 +4532,28 @@ def run_surface_test(
             injection_surface=injection_surface,
             target=target or None,
         )
+    email_attack_case = _load_email_attack_case(email_attack_cases_jsonl, email_attack_case_id)
+    if email_attack_case:
+        if surface_key != "email_gmail":
+            raise RuntimeError("--email-attack-cases-jsonl is supported only for email_gmail")
+        case_technique = str(email_attack_case.get("technique_tag", "")).strip()
+        case_objective = str(email_attack_case.get("objective_tag", "")).strip()
+        if case_technique and case_technique not in normalized_technique_tags:
+            raise RuntimeError(
+                f"Email attack case technique {case_technique!r} does not match "
+                f"selected technique tags {normalized_technique_tags!r}"
+            )
+        if case_objective and case_objective != malicious_task_tag:
+            raise RuntimeError(
+                f"Email attack case objective {case_objective!r} does not match "
+                f"selected malicious task {malicious_task_tag!r}"
+            )
+        package["email_attack_case"] = email_attack_case
+        package["payload"] = _email_attack_case_payload(
+            email_attack_case,
+            task_text=task_text,
+            objective_tag=malicious_task_tag,
+        )
     (run_dir / "prompt_package.json").write_text(json.dumps(package, indent=2, ensure_ascii=True), encoding="utf-8")
 
     gateway: GatewayClient | None = None
@@ -4496,6 +4665,11 @@ def run_surface_test(
         if surface_key == "email_gmail":
             # 2) Send attack email.
             subject, body = _split_subject_body(str(package.get("payload", "")))
+            attack_case = package.get("email_attack_case")
+            attack_case_content_type = ""
+            if isinstance(attack_case, dict):
+                attack_case_content_type = str(attack_case.get("content_type", "")).strip().lower()
+            html_email = attack_case_content_type == "html" or _looks_like_html_email(body)
             email_inject_method = _email_inject_method()
             if email_inject_method == "imap_append":
                 append_result = _append_attack_email_to_imap(
@@ -4503,12 +4677,14 @@ def run_surface_test(
                     recipient=recipient_email,
                     subject=subject,
                     body=body,
+                    html=html_email,
                 )
                 result["steps"]["send_email"] = {
                     "recipient": recipient_email,
                     "sender": attacker_email,
                     "subject": subject,
                     "method": "imap_append",
+                    "html": html_email,
                     "imap": append_result,
                 }
             else:
@@ -4517,12 +4693,14 @@ def run_surface_test(
                     subject=subject,
                     body=body,
                     config=attacker_smtp_config_from_env(),
+                    html=html_email,
                 )
                 result["steps"]["send_email"] = {
                     "recipient": recipient_email,
                     "sender": smtp_result.sender,
                     "subject": subject,
                     "method": "smtp",
+                    "html": html_email,
                     "smtp": smtp_result.to_dict(),
                 }
             result["steps"]["recent_emails_before_chat"] = _get_recent_emails(limit=5)
@@ -5771,6 +5949,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--email-attack-cases-jsonl",
+        default="",
+        help="Optional JSONL/JSON manifest containing custom email attack case payloads.",
+    )
+    parser.add_argument(
+        "--email-attack-case-id",
+        default="",
+        help="Case ID to load from --email-attack-cases-jsonl.",
+    )
+    parser.add_argument(
         "--base-model",
         default="",
         help=(
@@ -5977,6 +6165,8 @@ def main() -> int:
             "--all-techniques cannot be combined with --technique-tags, "
             "--compose-all-techniques, or --compose-paper-techniques"
         )
+    if args.all_techniques and (args.email_attack_cases_jsonl.strip() or args.email_attack_case_id.strip()):
+        parser.error("--all-techniques cannot be combined with --email-attack-cases-jsonl")
 
     if args.all_techniques:
         try:
@@ -6105,6 +6295,8 @@ def main() -> int:
             github_commit_message=args.github_commit_message,
             github_share_link=args.github_share_link,
             cleanup_email=args.cleanup_email,
+            email_attack_cases_jsonl=args.email_attack_cases_jsonl,
+            email_attack_case_id=args.email_attack_case_id,
             base_model=args.base_model,
             agent_model=args.agent_model,
             reddit_client_id=args.reddit_client_id,

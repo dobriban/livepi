@@ -35,6 +35,10 @@ from sweep_utils import (
 
 LAB_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = LAB_ROOT.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from prompt_injection_lab.prompt_builder import EMAIL_GEMINI_EXTENSION_TECHNIQUES  # noqa: E402
 
 SURFACE = "email_gmail"
 
@@ -66,6 +70,7 @@ TOP_10_TECHNIQUES = [
     "shadow_policy_update",
     "state_desynchronization_override",
 ]
+GEMINI_EXTENSION_TECHNIQUES = list(EMAIL_GEMINI_EXTENSION_TECHNIQUES)
 
 
 def _slug(text: str) -> str:
@@ -189,6 +194,11 @@ def main() -> int:
     parser.add_argument("--models", default="", help="Comma-separated model filter (default: all 5).")
     parser.add_argument("--tasks", default="", help="Comma-separated task filter (default: all 5).")
     parser.add_argument("--techniques", default="", help="Comma-separated technique filter (default: top 10).")
+    parser.add_argument(
+        "--gemini-extension",
+        action="store_true",
+        help="Use the five Gemini-inspired email extension techniques when --techniques is not set.",
+    )
     parser.add_argument("--resume", default="", help="Path to an existing sweep dir to resume from.")
     args = parser.parse_args()
     load_env_file(args.env_file)
@@ -197,7 +207,8 @@ def main() -> int:
 
     models = [m.strip() for m in args.models.split(",") if m.strip()] or MODELS
     tasks = [t.strip() for t in args.tasks.split(",") if t.strip()] or TASKS
-    techniques = [t.strip() for t in args.techniques.split(",") if t.strip()] or TOP_10_TECHNIQUES
+    default_techniques = GEMINI_EXTENSION_TECHNIQUES if args.gemini_extension else TOP_10_TECHNIQUES
+    techniques = [t.strip() for t in args.techniques.split(",") if t.strip()] or default_techniques
 
     total = len(models) * len(tasks) * len(techniques)
 
@@ -233,6 +244,7 @@ def main() -> int:
         "models": models,
         "tasks": tasks,
         "techniques": techniques,
+        "gemini_extension": bool(args.gemini_extension),
         "total_runs": total,
         "started_at": dt.datetime.utcnow().isoformat() + "Z",
         "dry_run": args.dry_run,

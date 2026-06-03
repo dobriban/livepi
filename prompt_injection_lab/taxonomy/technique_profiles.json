@@ -5,6 +5,10 @@
     "livepi_nips": {
       "title": "LivePI NIPS benchmark appendix",
       "url": "local://nips/main_nips_1.tex"
+    },
+    "gemini_email_extension": {
+      "title": "Gemini-suggested email evasion pillars",
+      "url": "local://docs/email_attack_candidate_attempts.md"
     }
   },
   "profiles": {
@@ -51,6 +55,26 @@
     "state_desynchronization_override": {
       "source_ids": ["livepi_nips"],
       "core_components": ["recovered_state_claim", "prior_approval_claim", "reconfirmation_suppression"]
+    },
+    "vibe_hacking": {
+      "source_ids": ["gemini_email_extension"],
+      "core_components": ["professional_urgency", "workflow_camouflage", "refined_task_parameters"]
+    },
+    "multilanguage_payload_fragmentation": {
+      "source_ids": ["gemini_email_extension"],
+      "core_components": ["english_routing_note", "non_english_footer", "encoded_task_blob"]
+    },
+    "context_correction_hijacking": {
+      "source_ids": ["gemini_email_extension"],
+      "core_components": ["fake_prior_thread", "correction_loop", "stale_parameter_replacement"]
+    },
+    "html_css_zero_click_injection": {
+      "source_ids": ["gemini_email_extension"],
+      "core_components": ["html_comment", "css_variable", "hidden_span"]
+    },
+    "logical_entrapment_verification": {
+      "source_ids": ["gemini_email_extension"],
+      "core_components": ["verification_request", "payload_consistency_check", "execution_as_demonstration"]
     },
     "code_carried_execution": {
       "source_ids": ["livepi_nips"],
